@@ -49,42 +49,59 @@ contract TokenSwap {
         IToken(_tokenB).transferFrom(msg.sender, address(this), _amountB);
         hasLiquidity[_tokenA] = true;
         hasLiquidity[_tokenB] = true;
-        for(uint i = 0; i < alltokens.length; i++){
-            if (_tokenA == alltokens[i]){
+        address[] memory _alltokens = alltokens;
+        uint size = _alltokens.length;
+        if (size == 0) {
+            alltokens.push(_tokenA);
+            alltokens.push(_tokenB);
+        }
+        for(uint i = 0; i < size; i++){
+            if (_tokenA == _alltokens[i]){
                 alltokens[i] = _tokenA;
             }else {
                 alltokens.push(_tokenA);
             }
-            if (_tokenB == alltokens[i]){
+            if (_tokenB == _alltokens[i]){
                 alltokens[i] = _tokenA;
             }else {
                 alltokens.push(_tokenB);
             }
         }
+        // alltokens = _alltokens;
     }
+
 
     // @notice Remove liquidity function
     function removeLiquidity(address _tokenA, address _tokenB, uint _amountA, uint _amountB) public {
         require(TokenBalPerAdd[_tokenA][msg.sender] >= _amountA && TokenBalPerAdd[_tokenB][msg.sender] >= _amountB);
         require(IToken(_tokenA).balanceOf(address(this)) >= _amountA && IToken(_tokenB).balanceOf(address(this)) >= _amountB, "Please try again shortly" );
+        TokenBalPerAdd[_tokenA][msg.sender] -= _amountA;
+        TokenBalPerAdd[_tokenB][msg.sender] -= _amountB;
         IToken(_tokenA).transfer(msg.sender, _amountA);
         IToken(_tokenB).transfer(msg.sender, _amountB);
     }
+
 
     // @notice Returns a list of address of all Liquidity tokens availiable
     function LiqTokAvail() public view returns(address[] memory _alltokens){
         return alltokens;
     }
-    
+
 
     function addBasePair(address _basePair) public onlyOwner{
-        for (uint i = 0; i < AllBasePairs.length; i++){
-            if (_basePair == AllBasePairs[i]){
+        address[] memory _AllBasePairs = AllBasePairs;
+        uint size = _AllBasePairs.length;
+        if (size == 0){
+            AllBasePairs.push(_basePair);
+        }
+        for (uint i = 0; i < size; i++){
+            if (_basePair == _AllBasePairs[i]){
                 AllBasePairs[i] = _basePair;
             }else {
                 AllBasePairs.push(_basePair);
             }
         }
+        // AllBasePairs = _AllBasePairs;
         isBasePair[_basePair] = true;
     }
 
@@ -100,29 +117,38 @@ contract TokenSwap {
     }
 
 
-
-    // function swap(address _tokenfrom, address _tokento, uint256 _amount) public returns (uint AmountToRecieve){
-
-    //     // AAVE/ETH = 0x6Df09E975c830ECae5bd4eD9d90f3A95a4f88012
-
-    //     address PriceFeedAdd = 0x6Df09E975c830ECae5bd4eD9d90f3A95a4f88012;
-
-    //     (,int256 price, , ,  ) = AggregatorV3Interface(PriceFeedAdd).latestRoundData();
+    //@notice Gets token price of a pair using chainlink aggregator
+    function getPrice(address PriceFeedAdd) public view returns(int _price){
+        (,_price, , ,  ) = AggregatorV3Interface(PriceFeedAdd).latestRoundData();
+    }
 
 
-    //     if (_tokenfrom > _tokento) {
-    //         AmountToRecieve = _amount * uint256(price);
-    //     }else {
-    //         AmountToRecieve = _amount * (1 / uint256(price));
-    //     }
+    function getPriceFromToken(address _tokenA, address _tokenB) public view returns(uint256 _price){
+        address tokenAUsdtAggAdd = BasePairToQuotePairToAggAdd[USDTBasePairAdd][_tokenA];
+        require(tokenAUsdtAggAdd != address(0), "There is no price feed for this token");
+        address tokenBUsdtAggAdd = BasePairToQuotePairToAggAdd[USDTBasePairAdd][_tokenB];
+        require(tokenBUsdtAggAdd != address(0), "There is no price feed for this token");
+        (,int256 priceAUsdt, , ,  ) = AggregatorV3Interface(tokenAUsdtAggAdd).latestRoundData();
+        (,int256 priceBUsdt, , ,  ) = AggregatorV3Interface(tokenBUsdtAggAdd).latestRoundData();
 
-    //     AmountToRecieve = _amount * uint256(price);
+        _price = uint(priceAUsdt / priceBUsdt);
+    }
 
-    //     require (PriceFeedAdd > _tokenfrom, "Your address is smaller than required");
+
+    function getRelativeAmt(address _tokenfrom, address _tokento, uint256 _amount) public view returns (uint AmountToRecieve){
+        AmountToRecieve = _amount / uint256(getPriceFromToken(_tokento, _tokenfrom));
+    }
 
 
-    //     IToken(_tokenfrom).transferFrom(msg.sender, address(this), _amount);
-    //     IToken(_tokento).transfer(msg.sender, AmountToRecieve);
-    // }
+
+    function swap(address _tokenfrom, address _tokento, uint256 _amount) public returns (uint AmountToRecieve){
+
+        AmountToRecieve = _amount / uint256(getPriceFromToken(_tokento, _tokenfrom));
+
+        require (IToken(_tokento).balanceOf(address(this)) >= AmountToRecieve, "No sufficient liquidity");
+
+        IToken(_tokenfrom).transferFrom(msg.sender, address(this), _amount);
+        IToken(_tokento).transfer(msg.sender, AmountToRecieve);
+    }
 
 }

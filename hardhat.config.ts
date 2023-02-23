@@ -11,7 +11,6 @@ const config: HardhatUserConfig = {
       forking: {
         enabled: true,
         //@ts-ignore
-        // url: process.env.MAINNET
         url: process.env.MAINNET
       }
     },
